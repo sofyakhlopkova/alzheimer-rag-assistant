@@ -1,0 +1,34 @@
+# Data processing
+matplotlib
+seaborn
+wordcloud
+pandas
+numpy
+pypdf2
+pdfplumber
+beautifulsoup4
+
+# PubMed API
+biopython
+requests
+
+# NLP and embeddings
+sentence-transformers
+transformers
+
+# Vector store
+chromadb
+
+# RAG framework
+langchain
+langchain-community
+langchain-huggingface
+langchain-openai
+langchain-text-splitters
+
+# Utils
+python-dotenv
+tqdm
+jupyter
+
+nltk
