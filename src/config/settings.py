@@ -1,4 +1,3 @@
-# src/config/settings.py - упрощенная версия
 from pydantic_settings import BaseSettings
 from pydantic import Field
 from pathlib import Path
@@ -30,6 +29,7 @@ class Settings(BaseSettings):
     PATH_RAG_READY_PAPERS_CSV: str = Field('data/processed/rag_ready_papers.csv', env='PATH_RAG_READY_PAPERS_CSV')
     PATH_STORAGE_INFO: str = Field('chroma_db/storage_info.json', env='PATH_STORAGE_INFO')
     PATH_CHUNKS_CSV: str = Field('data/processed/document_chunks.csv', env='PATH_CHUNKS_CSV')
+    PATH_PAPERS_WITH_METRICS_CSV: str = Field('data/processed/alzheimer_papers_with_metrics.csv', env='PATH_PAPERS_WITH_METRICS_CSV')
     
     # параметры
     CHUNK_SIZE: int = Field(300, env='CHUNK_SIZE')

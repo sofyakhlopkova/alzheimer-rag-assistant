@@ -7,6 +7,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from typing import List, Dict
+
+from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer
+
 
 from src.database.chroma_client import init_chroma_db
 from src.database.collection import create_or_get_collection
@@ -81,7 +86,7 @@ def init_session_state():
     
     if 'use_llm' not in st.session_state:
         llm_available = check_llm_available()
-        print(f"[DEBUG] LLM доступен: {llm_available}")  # отладка
+        print(f"[DEBUG] LLM доступна: {llm_available}")  # отладка
         st.session_state.use_llm = llm_available
     
     if 'conversation_id' not in st.session_state:
@@ -103,6 +108,11 @@ def load_rag_components():
         embedding_model = load_embedding_model(config.EMBEDDING_MODEL)
         return collection, embedding_model
 
+@st.cache_resource
+def load_eval_model():
+    """загрузка модели для оценки RAG"""
+    return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+
 # дополнительное кэширование для текстовых запросов
 @st.cache_data(ttl=600)  # кэш на 10 минут
 def get_embeddings_cached(texts: tuple):  # tuple потому что list не хэшируемый
@@ -122,13 +132,13 @@ def debug_cache_status():
     # Инкрементируем при каждом запуске main
     st.session_state.load_count += 1
     
-    st.sidebar.metric("Запусков main()", st.session_state.load_count)
+    st.sidebar.metric("запусков main()", st.session_state.load_count)
     
     # Если load_count > 1, а load_rag_components все еще должна быть закэширована
     if st.session_state.load_count == 1:
-        st.sidebar.success(" Компоненты загружаются (первый запуск)")
+        st.sidebar.success(" компоненты загружаются (первый запуск)")
     else:
-        st.sidebar.info(" Компоненты из кэша (повторный запуск)")
+        st.sidebar.info(" компоненты из кэша (повторный запуск)")
 
 
 def display_sources(sources_df: pd.DataFrame):
@@ -145,7 +155,7 @@ def display_sources(sources_df: pd.DataFrame):
         
         st.markdown(f"""
         <div class="source-card" style="font-size:0.85rem;">
-            <b>{row['title'][:80]}...</b><br>
+            <b>{row['title'][:]}...</b><br>
              {row['year']} |  PMID: {row['pmid']}<br>
             <span class="{score_class}"> Релевантность: {row['similarity']:.3f}</span><br>
              {row['text_preview'][:150]}...
@@ -168,7 +178,7 @@ def display_chat_history():
             if "sources" in message and message["sources"]:
                 with st.expander(" показать источники"):
                     for source in message["sources"][:]:
-                        st.markdown(f"- **{source['title'][:80]}** (релевантность: {source['similarity']:.3f})")
+                        st.markdown(f"- **{source['title'][:]}** (релевантность: {source['similarity']:.3f})")
 
 
 def get_rag_answer_with_history(query: str, collection, embedding_model, top_k: int = 5, 
@@ -199,7 +209,7 @@ def get_rag_answer_with_history(query: str, collection, embedding_model, top_k: 
         print(f"[DEBUG] Ошибка check_llm_available: {e}")
         ollama_works = False  
     
-    # Проверяем настройки пользователя
+    # проверяем настройки пользователя
     use_llm_setting = st.session_state.get('use_llm', True)
     print(f"[DEBUG] use_llm_setting = {use_llm_setting}")
     
@@ -216,11 +226,27 @@ def get_rag_answer_with_history(query: str, collection, embedding_model, top_k: 
             filter_full_text_only=filter_full_text_only,
             use_llm=True
         )
+
+        eval_metrics = evaluate_rag_response(
+            question=enhanced_query,
+            answer=rag_result['answer'],
+            contexts=[s.get('text', '') for s in rag_result.get('sources', [])]
+        )
+        
+        # сохранение в session_state
+        if 'eval_history' not in st.session_state:
+            st.session_state.eval_history = []
+        st.session_state.eval_history.append({
+            'query': enhanced_query,
+            **eval_metrics,
+            'timestamp': datetime.now().strftime("%H:%M:%S")
+        })
         
         return {
             'answer': rag_result['answer'],
             'sources': rag_result.get('sources', []),
-            'has_sources': len(rag_result.get('sources', [])) > 0
+            'has_sources': len(rag_result.get('sources', [])) > 0,
+            'evaluation': eval_metrics 
         }
     else:
         # fallback
@@ -257,6 +283,51 @@ def get_rag_answer_with_history(query: str, collection, embedding_model, top_k: 
                 'sources': [],
                 'has_sources': False
             }
+
+def evaluate_rag_response(question: str, answer: str, contexts: List[str]) -> Dict:
+    """
+    оценка RAG ответа с помощью эмбеддингов
+    """
+    if not answer or not question:
+        return {
+            'answer_relevancy': 0.0,
+            'faithfulness': 0.0,
+            'context_precision': 0.0
+        }
+    
+    eval_model = load_eval_model()
+    
+    # эмбеддинги
+    q_emb = eval_model.encode([question])
+    a_emb = eval_model.encode([answer])
+    
+    # релевантность ответа вопросу
+    relevancy = cosine_similarity(q_emb, a_emb)[0][0]
+    
+    # точность контекста и верность фактам
+    if contexts:
+        context_text = ' '.join(contexts[:3])  # топ-3 источника
+        c_emb = eval_model.encode([context_text])
+        
+        context_precision = cosine_similarity(c_emb, q_emb)[0][0]
+        faithfulness = cosine_similarity(a_emb, c_emb)[0][0]
+    else:
+        faithfulness = 0.0
+        context_precision = 0.0
+    
+    metrics = {
+        'answer_relevancy': round(relevancy, 3),
+        'faithfulness': round(faithfulness, 3),
+        'context_precision': round(context_precision, 3)
+    }
+    
+    # вывод в консоль
+    print(f"\n RAG EVALUATION")
+    print(f"   answer relevancy: {metrics['answer_relevancy']:.3f}")
+    print(f"   faithfulness: {metrics['faithfulness']:.3f}")
+    print(f"   context precision: {metrics['context_precision']:.3f}")
+    
+    return metrics
         
 def main():
     # инициализация
@@ -306,6 +377,48 @@ def main():
                 st.metric("с полным текстом", stats.get('articles_with_full_text', '?'))
         except:
             st.info("Статистика временно недоступна")
+
+        st.markdown("---")
+        st.markdown("##  RAG качество")
+
+        if st.button(" показать метрики последнего ответа"):
+            if 'eval_history' in st.session_state and st.session_state.eval_history:
+                last = st.session_state.eval_history[-1]
+                
+                cols = st.columns(3)
+                
+                with cols[0]:
+                    st.metric("answer relevancy", f"{last['answer_relevancy']:.2f}")
+                
+                with cols[1]:
+                    st.metric("faithfulness", f"{last['faithfulness']:.2f}")
+                
+                with cols[2]:
+                    st.metric("context precision", f"{last['context_precision']:.2f}")
+                
+                # общая оценка
+                avg_score = (last['answer_relevancy'] + last['faithfulness'] + last['context_precision']) / 3
+                st.progress(float(avg_score))
+                
+                if avg_score >= 0.7:
+                    st.success(" отличное качество ответа")
+                elif avg_score >= 0.5:
+                    st.info(" хорошее качество")
+                else:
+                    st.warning(" качество ниже среднего, требуется доработка")
+            else:
+                st.info("задайте вопрос, чтобы увидеть оценку")
+
+        # история оценок
+        if st.checkbox(" показать историю оценок"):
+            if 'eval_history' in st.session_state and st.session_state.eval_history:
+                history_df = pd.DataFrame(st.session_state.eval_history)
+                st.dataframe(
+                    history_df[['query', 'answer_relevancy', 'faithfulness', 'context_precision']].tail(5),
+                    use_container_width=True
+                )
+            else:
+                st.info("история пуста")
         
         st.markdown("---")
         st.markdown("##  Примеры запросов")

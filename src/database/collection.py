@@ -6,7 +6,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 from src.config.settings import config
 
-def create_or_get_collection(client, collection_name: config.COLLECTION_NAME):
+def create_or_get_collection(client, collection_name: str = config.COLLECTION_NAME):
     """
     создание или получение существующей коллекции
     """

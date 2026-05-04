@@ -71,13 +71,23 @@ def rag_answer(
 
 
 def _build_fallback_answer(results: dict, sources_df) -> str:
-    """ответ без LLM на основе найденных статей"""
-    answer = f"найдено {len(sources_df)} релевантных статей:\n\n"
+    """
+    ответ без LLM на основе найденных статей 
+    """
+    if sources_df.empty:
+        return """
+**ничего не найдено**
+"""
     
-    for _, row in sources_df.iterrows():
-        answer += f" {row['title']} ({row['year']})\n"
-        answer += f"   релевантность: {row['similarity']:.3f}\n"
-        answer += f"   PMID: {row['pmid']}\n"
-        answer += f"   фрагмент: {row['text_preview']}\n\n"
+    answer = f"**найдено {len(sources_df)} релевантных статей**\n\n"
+    
+    for i, row in sources_df.iterrows():
+        answer += f"""
+**{i+1}. {row['title']}** ({row['year']})
+- релевантность: {row['similarity']:.3f}
+- PMID: {row['pmid']}
+- фрагмент: {row['text_preview'][:150]}...
+
+"""
     
     return answer

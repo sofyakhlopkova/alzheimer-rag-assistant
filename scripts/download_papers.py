@@ -1,8 +1,15 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import requests
 import time
 import logging
 from typing import List, Dict, Optional
 import xml.etree.ElementTree as ET  # для парсинга
+import json
+import re
 
 # настройка логирования 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -27,6 +34,7 @@ def rate_limit(calls_per_second=3):
         return wrapper
     return decorator
 
+
 @rate_limit(3)
 def search_pubmed(query: str, retmax: int = 50, email: str = config.EMAIL) -> List[str]:
     """
@@ -49,19 +57,27 @@ def search_pubmed(query: str, retmax: int = 50, email: str = config.EMAIL) -> Li
             "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
             params=params,
             headers=headers,
-            timeout=10
+            timeout=30  # увеличил таймаут
         )
         response.raise_for_status()
         
-        data = response.json()
+        # Очищаем ответ от некорректных символов
+        clean_text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', response.text)
+        data = json.loads(clean_text)
+        
         pmids = data.get("esearchresult", {}).get("idlist", [])
         
         logging.info(f"PubMed: найдено {len(pmids)} статей")
         return pmids
         
+    except json.JSONDecodeError as e:
+        logging.error(f"ошибка парсинга JSON: {e}")
+        logging.debug(f"Проблемный ответ: {response.text[:200]}")
+        return []
     except Exception as e:
         logging.error(f"ошибка поиска в PubMed: {e}")
         return []
+
 
 @rate_limit(3)
 def fetch_abstracts(pmids: List[str], email: str = config.EMAIL) -> List[Dict]:
@@ -86,28 +102,36 @@ def fetch_abstracts(pmids: List[str], email: str = config.EMAIL) -> List[Dict]:
             "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
             params=params,
             headers=headers,
-            timeout=30
+            timeout=60  # увеличил таймаут
         )
         response.raise_for_status()
         
-        # парсинг XML
+        # Очищаем XML от некорректных символов
+        clean_xml = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', response.text)
+        
         articles = []
-        root = ET.fromstring(response.text)
+        root = ET.fromstring(clean_xml)
         
         for article in root.findall(".//PubmedArticle"):
             try:
                 pmid = article.findtext(".//PMID", "")
                 title = article.findtext(".//ArticleTitle", "")
                 
-                # собираем абстракт 
+                # собираем абстракт
                 abstract_parts = []
                 for abstract_elem in article.findall(".//AbstractText"):
                     if abstract_elem.text:
-                        abstract_parts.append(abstract_elem.text)
+                        # Очищаем текст
+                        clean_text = ' '.join(abstract_elem.text.split())
+                        abstract_parts.append(clean_text)
                 abstract = " ".join(abstract_parts)
                 
                 journal = article.findtext(".//Journal/Title", "")
                 year = article.findtext(".//PubDate/Year", "")
+                
+                # Если год не найден, пробуем другой путь
+                if not year:
+                    year = article.findtext(".//PubDate/MedlineDate", "")[:4]
                 
                 if pmid and title:
                     articles.append({
@@ -127,9 +151,13 @@ def fetch_abstracts(pmids: List[str], email: str = config.EMAIL) -> List[Dict]:
         logging.info(f"получено {len(articles)} абстрактов")
         return articles
         
+    except ET.ParseError as e:
+        logging.error(f"ошибка парсинга XML: {e}")
+        return []
     except Exception as e:
         logging.error(f"ошибка получения абстрактов: {e}")
         return []
+    
 
 @rate_limit(3)
 def get_pmc_id_from_pmid(pmid: str, email: str = config.EMAIL) -> Optional[str]:
@@ -241,7 +269,7 @@ def fetch_full_text_from_pmc(pmc_id: str, email: str = config.EMAIL) -> Dict[str
 def collect_alzheimer_papers(
     queries: List[str] = None,
     max_papers: int = 50,
-    email: str = "your@email.com"
+    email: str = config.EMAIL
 ) -> List[Dict]:
     """
     главная функция для сбора статей
@@ -340,3 +368,4 @@ if __name__ == "__main__":
         save_articles_to_csv(papers)
     else:
         logging.error("не удалось собрать статьи")
+

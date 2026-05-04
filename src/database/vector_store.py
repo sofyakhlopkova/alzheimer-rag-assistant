@@ -101,7 +101,7 @@ def create_vector_store(df: pd.DataFrame,
     
     # сохранение информации о чанках
     chunks_df.to_csv(path, index=False)
-    logging.info("чанки сохранены в {path}")
+    logging.info(f"чанки сохранены в {path}")
     
     return collection, chunks_df
 
@@ -152,16 +152,21 @@ def format_results(results: dict) -> pd.DataFrame:
     formatted = []
     
     for i in range(len(results['ids'][0])):
-        # косинусное расстояние в схожесть (1 - distance для cosine)
+        metadata = results['metadatas'][0][i]
+        
+        # Пропускаем если метаданные None
+        if metadata is None:
+            continue
+        
         similarity = 1 - results['distances'][0][i]
         
         result = {
-            'pmid': results['metadatas'][0][i].get('pmid', ''),
-            'title': results['metadatas'][0][i].get('title', '')[:100],
-            'year': results['metadatas'][0][i].get('year', 0),
+            'pmid': metadata.get('pmid', ''),
+            'title': metadata.get('title', '')[:100],
+            'year': metadata.get('year', 0),
             'similarity': similarity,
-            'source_type': results['metadatas'][0][i].get('source_type', ''),
-            'text_preview': results['documents'][0][i][:200] + '...'
+            'source_type': metadata.get('source_type', ''),
+            'text_preview': results['documents'][0][i][:200] + '...' if results['documents'][0][i] else ''
         }
         formatted.append(result)
     
