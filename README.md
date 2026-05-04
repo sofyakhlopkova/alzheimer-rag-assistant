@@ -14,7 +14,7 @@ RAG-система для поиска научных статей по боле
 
 ```bash
 # Клонирование
-git clone https://github.com/your-username/alzheimer-rag-assistant.git
+git clone https://github.com/sofyakhlopkova/alzheimer-rag-assistant.git
 cd alzheimer-rag-assistant
 
 # Виртуальное окружение
