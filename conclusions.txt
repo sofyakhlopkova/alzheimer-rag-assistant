@@ -1,0 +1,68 @@
+Модальности для расширения RAG системы:
+
+- базы данных клинических исследований 
+- базы данных лекарственных молекул (DrugBank, ChEMBL)
+- базы данных белков и мишеней (PDB)
+- препринты (bioRxiv, medRxiv)
+
+Как?
+- использовать отдельную векторную БД 
+- дополнить RAG агентами для API вызовов:
+     * PubChem API для поиска молекул
+     * ClinicalTrials API для поиска исследований
+     * PDB API для поиска белков
+
+
+Обоснование выбора моделей:
+
+embedding model: "intfloat/multilingual-e5-small" - поддержка русского и английского, хорошее качество, небольшой размер
+    
+LLM: "qwen2.5:1.5b" - баланс качества и скорости, запуск локально, оптимальная скорость загрузки в streamlit
+(в консоли можно использовать qwen2.5:3b)
+    
+vector DB: "ChromaDB" - поддержка метаданных и фильтрации
+    
+evaluation: sentence transformers + cosine similarity - быстрая, не требует размеченных данных, коррелирует с человеческой оценкой"
+
+
+Текущая архитектура:
+
+QUERY → HISTORY (context) → ENHANCED QUERY
+         ↓
+    [RETRIEVAL]
+         ↓
+    ChromaDB (semantic search)
+    + filters (year, full_text)
+         ↓
+    TOP-K CHUNKS 
+         ↓
+    [CONTEXT BUILDING]
+         ↓
+    LLM (qwen2.5:1.5b)
+         ↓
+    ANSWER + SOURCES
+
+
+Возможные улучшения в архитектуре:
+
+QUERY → QUERY EXPANSION (биграммы, synonyms)
+         ↓
+    [HYBRID RETRIEVAL]
+         ↓
+    ├── Semantic (ChromaDB)
+    ├── Keyword (BM25)
+    └── Reranking (cross-encoder)
+         ↓
+    [CONTEXT + METADATA]
+         ↓
+        LLM 
+         ↓
+    ANSWER + CITATIONS + CONFIDENCE
+
+
+answer_relevancy: релевантность ответов вопросам - хорошее качество
+faithfulness: LLM иногда галлюцинирует, нужна доработка
+context_precision: поиск находит не совсем точные источники
+
+RAG агент работает и дает релевантные ответы, но требует доработки для повышения точности и фактологической достоверности. 
+Ограничение - размер датасета.

@@ -27,7 +27,7 @@ def build_context(search_results: dict, max_chunks: int = config.MAX_CHUNKS, max
         if len(document) > max_text_length:
             document = document[:max_text_length] + "..."
         
-        context_part = f"""[Источник {i+1}] {title} ({year}) | PMID: {pmid} | Релевантность: {score:.3f}
+        context_part = f"""{title} ({year}) | PMID: {pmid} | Релевантность: {score:.3f}
 {document}
 """
         context_parts.append(context_part)
@@ -45,16 +45,19 @@ def get_system_prompt() -> str:
 RULES:
 - Respond ONLY in English using Latin alphabet
 - Base answer on provided context
-- Cite sources (PMID, year) for key findings
-- Do not invent information, but it is better to aggregate information from the list of sources and say something if you can
-- If context lacks specific answer, aggregate available information and summarize what the sources collectively indicate
-- Say "Limited information found" rather than "not found" if some relevant data exists
+- Do not invent information. Aggregate information from sources when possible
+- If context lacks specific answer, summarize what sources collectively indicate
+- Say "Limited information found" if some relevant data exists
+- Do not use phrases like "based on the provided context" or "the sources mention"
+- Do not include section headers in your response
 
 FORMAT:
-1. Summary: [2-3 sentence overview]
-2. Key findings: bullet points with sources
-3. Details: [elaboration on most important points]
-4. Sources: list PMIDs used"""
+1. Summary: [2-3 sentence overview of key findings]
+2. Key findings: [bullet points with key information]
+3. Details: [elaboration on most important points, cite sources]
+4. Limitations: [if applicable, note gaps in current knowledge]
+
+Always cite sources using PMID when referencing specific findings."""
 
 
 def build_prompt(query: str, context: str, system_prompt: str = None) -> str:

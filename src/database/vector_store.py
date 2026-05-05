@@ -49,7 +49,7 @@ def add_to_vector_db(chunks_df: pd.DataFrame,
         for _, row in batch.iterrows():
             metadata = {
                 'pmid': str(row['pmid']),
-                'title': str(row['title'])[:200] if row['title'] else '',
+                'title': str(row['title'])[:] if row['title'] else '',
                 'year': int(row['year']) if pd.notna(row['year']) else 0,
                 'has_full_text': bool(row['has_full_text']),
                 'chunk_index': int(row['chunk_index']),
@@ -162,7 +162,7 @@ def format_results(results: dict) -> pd.DataFrame:
         
         result = {
             'pmid': metadata.get('pmid', ''),
-            'title': metadata.get('title', '')[:100],
+            'title': metadata.get('title', '')[:],
             'year': metadata.get('year', 0),
             'similarity': similarity,
             'source_type': metadata.get('source_type', ''),
